@@ -20,7 +20,7 @@
 
 > `<url>` 需经过 `encodeURIComponent` 编码。
 
-## 部署
+## Cloudflare Workers 部署
 
 1. 登录 [Cloudflare Workers](https://dash.cloudflare.com/)。
 2. 创建新的 Worker。
@@ -29,14 +29,30 @@
 
 无需 KV、无需额外依赖。
 
-## 本地测试
+## Node.js 部署
 
-需要 Node.js 18+：
+需要 Node.js 18+。
+
+```bash
+node node-server.mjs [PORT]
+# 默认监听 0.0.0.0:3099
+```
+
+可以用 `pm2` 或 `systemd` 守护进程：
+
+```bash
+npm install -g pm2
+pm2 start node-server.mjs --name m3u8-ad-strip -- 3099
+```
+
+## 本地测试
 
 ```bash
 cd m3u8-ad-strip
 node --check worker.js
 node test-worker.mjs
+node --check node-server.mjs
+node test-node-server.mjs
 ```
 
 ## 注意事项
