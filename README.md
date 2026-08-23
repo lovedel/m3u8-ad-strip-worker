@@ -38,7 +38,34 @@ node node-server.mjs [PORT]
 # 默认监听 0.0.0.0:3099
 ```
 
-可以用 `pm2` 或 `systemd` 守护进程：
+可以用 `pm2` 或 `systemd` 守护进程。
+
+### systemd 示例
+
+1. 把代码复制到 `/opt/m3u8-ad-strip`：
+
+```bash
+sudo mkdir -p /opt/m3u8-ad-strip
+sudo cp worker.js node-server.mjs /opt/m3u8-ad-strip/
+```
+
+2. 复制单元文件：
+
+```bash
+sudo cp m3u8-ad-strip.service /etc/systemd/system/m3u8-ad-strip.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now m3u8-ad-strip.service
+```
+
+3. 查看状态：
+
+```bash
+sudo systemctl status m3u8-ad-strip
+```
+
+默认监听 `127.0.0.1:3099`；如需监听 `0.0.0.0`，编辑单元文件，取消 `Environment=HOST=0.0.0.0` 行的注释。
+
+### pm2 示例
 
 ```bash
 npm install -g pm2

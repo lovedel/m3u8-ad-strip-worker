@@ -699,8 +699,11 @@ const PLAYER_HTML = `<!DOCTYPE html>
       border-radius: 16px;
       background: black;
     }
-    .note { margin-top: 14px; color: #cbd5e1; font-size: 12px; line-height: 1.6; }
-    .note code { background: rgba(255,255,255,0.06); padding: 2px 6px; border-radius: 6px; font-size: 11px; }
+    .info { margin-top: 14px; color: #cbd5e1; font-size: 12px; line-height: 1.6; word-break: break-all; }
+    .info code { background: rgba(255,255,255,0.06); padding: 2px 6px; border-radius: 6px; font-size: 11px; }
+    .error { color: #f87171; }
+    .ok { color: #4ade80; }
+    a { color: #38bdf8; }
   </style>
 </head>
 <body>
@@ -708,29 +711,89 @@ const PLAYER_HTML = `<!DOCTYPE html>
     <h1 class="title">M3U8 Ad Strip Player</h1>
     <p class="subtitle">正在播放去广告后的 m3u8。</p>
     <video id="player" controls playsinline></video>
-    <p class="note">
-      提示：已返回绝对链接的纯净 m3u8，不会代理视频片段。回到输入页请访问 <code>/</code>。
-    </p>
+    <div class="info" id="status"></div>
+    <div class="info">
+      提示：播放器会从 <code>/m3u8/&amp;lt;url&amp;gt;</code> 拉取处理后的 m3u8，不会代理 TS 片段。回到输入页请访问 <a href="/">/</a>。
+    </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
   <script>
-    const input = new URLSearchParams(location.search).get('url');
-    const pathMatch = location.pathname.match(/^\/play\/(.+)$/);
-    const original = pathMatch && pathMatch[1] ? decodeURIComponent(pathMatch[1]) : input;
-    const playerUrl = original ? (location.origin + '/m3u8/' + encodeURIComponent(original)) : null;
-    const video = document.getElementById('player');
-    if (playerUrl) {
-      if (Hls.isSupported()) {
-        const hls = new Hls();
-        hls.loadSource(playerUrl);
-        hls.attachMedia(video);
-        hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));
-      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        video.src = playerUrl;
-        video.addEventListener('loadedmetadata', () => video.play().catch(() => {}), { once: true });
-      }
+    function hlsLoadError() {
+      document.getElementById('status').innerHTML = '<span class="error">错误：hls.js 加载失败，请检查是否能访问 https://cdn.jsdelivr.net/npm/hls.js@latest</span>';
     }
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest" onerror="hlsLoadError()"></script>
+  <script>
+    (function() {
+      const statusEl = document.getElementById('status');
+      function setStatus(text, isError) {
+        statusEl.innerHTML = text;
+        statusEl.classList.remove('ok', 'error');
+        statusEl.classList.add(isError ? 'error' : 'ok');
+      }
+
+      try {
+        const rawPath = decodeURIComponent(location.pathname || '');
+        const rawQuery = decodeURIComponent(location.search || '');
+        let original = '';
+        if (rawPath.startsWith('/play/') && rawPath.length > 6) {
+          original = rawPath.slice(6);
+        } else {
+          const queryUrl = new URLSearchParams(rawQuery).get('url');
+          if (queryUrl) original = queryUrl;
+        }
+
+        const playerUrl = original ? (location.origin + '/m3u8/' + encodeURIComponent(original)) : null;
+
+        if (!original) {
+          setStatus('错误：缺少 m3u8 链接。请在首页输入链接后点击“直接播放”。', true);
+          return;
+        }
+
+        if (typeof Hls === 'undefined') {
+          setStatus('错误：hls.js 未加载，无法播放。', true);
+          return;
+        }
+
+        const isNativeHls = document.createElement('video').canPlayType('application/vnd.apple.mpegurl');
+        if (!Hls.isSupported() && !isNativeHls) {
+          setStatus('错误：当前浏览器不支持 HLS 播放。', true);
+          return;
+        }
+
+        setStatus('原始链接：<code>' + original + '</code><br/>播放器正在加载：<code>' + playerUrl + '</code>');
+        const video = document.getElementById('player');
+
+        if (Hls.isSupported()) {
+          const hls = new Hls({ debug: false });
+          hls.loadSource(playerUrl);
+          hls.attachMedia(video);
+          hls.on(Hls.Events.MANIFEST_PARSED, () => {
+            setStatus('HLS 解析成功，开始播放。', false);
+            video.play().catch(() => {});
+          });
+          hls.on(Hls.Events.ERROR, (event, data) => {
+            let msg = 'HLS 播放错误：' + data.type + ' / ' + data.details;
+            if (data.response && data.response.code) {
+              msg += ' (HTTP ' + data.response.code + ')';
+            }
+            setStatus(msg, true);
+          });
+        } else if (isNativeHls) {
+          video.src = playerUrl;
+          video.addEventListener('loadedmetadata', () => {
+            setStatus('原生 HLS 加载成功。', false);
+            video.play().catch(() => {});
+          }, { once: true });
+          video.addEventListener('error', () => {
+            setStatus('原生 HLS 播放错误。', true);
+          }, { once: true });
+        }
+      } catch (err) {
+        setStatus('播放器初始化错误：' + err.message, true);
+        console.error(err);
+      }
+    })();
   </script>
 </body>
 </html>
@@ -838,9 +901,9 @@ function getTargetUrl(url) {
   if (url.searchParams.has('url')) {
     return url.searchParams.get('url');
   }
-  const pathMatch = url.pathname.match(/^\/m3u8\/(.+)/);
+  const pathMatch = url.pathname.match(/^\/(m3u8|play)\/(.+)/);
   if (pathMatch && pathMatch[1]) {
-    return decodeURIComponent(pathMatch[1]);
+    return decodeURIComponent(pathMatch[2]);
   }
   return null;
 }
@@ -892,6 +955,14 @@ async function handleRequest(request) {
   }
 
   if (requestUrl.pathname === '/play' || requestUrl.pathname.startsWith('/play/')) {
+    const targetUrl = getTargetUrl(requestUrl);
+    if (!targetUrl) {
+      return new Response('Missing m3u8 URL. Visit / or use /play/<url>.', {
+        status: 400,
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' }
+      });
+    }
+
     return new Response(PLAYER_HTML, {
       status: 200,
       headers: { 'Content-Type': 'text/html; charset=utf-8' }
